@@ -65,16 +65,18 @@
         android:id="@+id/salvarButton"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
         android:text="Cadastrar"
-        app:layout_constraintTop_toBottomOf="@id/registerConfirmPasswordEditText"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        app:layout_constraintTop_toBottomOf="@id/registerConfirmPasswordEditText" />
 
     <Button
         android:id="@+id/sairButton"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:text="Sair"
+        android:backgroundTint="#ed2828"
         app:layout_constraintTop_toBottomOf="@id/salvarButton"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
