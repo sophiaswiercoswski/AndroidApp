@@ -25,7 +25,7 @@
         android:id="@+id/userProfileImageView"
         android:layout_width="100dp"
         android:layout_height="100dp"
-        android:layout_marginTop="172dp"
+        android:layout_marginTop="168dp"
         android:contentDescription="Foto de perfil"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="0.498"
