@@ -61,13 +61,23 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/registerEmailEditText" />
 
+    <!-- Adiciona novo campo de Música favorita -->
+    <EditText
+        android:id="@+id/registerMusicaEditText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:hint="Música favorita"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/registerEnderecoEditText" />
+
     <EditText
         android:id="@+id/registerPasswordEditText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:hint="Senha"
         android:inputType="textPassword"
-        app:layout_constraintTop_toBottomOf="@id/registerEnderecoEditText"
+        app:layout_constraintTop_toBottomOf="@id/registerMusicaEditText"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
 
