@@ -1,219 +1,157 @@
 package com.ifpr.androidapptemplate.ui.home
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.Context
+import android.location.Location
+import android.net.Uri
 import android.os.Bundle
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.LinearLayout
+import android.widget.Button
 import android.widget.TextView
-import androidx.fragment.app.Fragment
-import android.util.Base64
-import android.widget.*
-import android.graphics.BitmapFactory
-import android.location.Geocoder
-import android.location.Location
-import android.os.Looper
+import android.widget.Toast
 import androidx.core.app.ActivityCompat
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.appcompat.widget.SwitchCompat
-import com.bumptech.glide.Glide
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.material.snackbar.Snackbar
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.Locale
+import androidx.fragment.app.Fragment
+import com.google.android.gms.location.*
+import com.google.firebase.database.*
 import com.ifpr.androidapptemplate.R
 import com.ifpr.androidapptemplate.baseclasses.Item
 import com.ifpr.androidapptemplate.databinding.FragmentHomeBinding
+import kotlin.math.*
 
 class HomeFragment : Fragment() {
 
-    private var _binding: FragmentHomeBinding? = null
-
-    private lateinit var currentAddressTextView: TextView
     private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var locationCallback: LocationCallback
     private lateinit var locationRequest: LocationRequest
+    private lateinit var locationCallback: LocationCallback
+    private lateinit var database: DatabaseReference
 
-    companion object {
-        private const val LOCATION_PERMISSION_REQUEST_CODE = 1
-    }
+    private lateinit var textNearestMarket: TextView
+    private lateinit var btnDistanceMarket: Button
+    private lateinit var btnOpenMaps: Button
 
-    // This property is only valid between onCreateView and
-    // onDestroyView.
-    private val binding get() = _binding!!
+    private var currentLocation: Location? = null
+    private var nearestMarket: Market? = null
 
     override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
+        inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
         val view = inflater.inflate(R.layout.fragment_home, container, false)
 
-        inicializaGerenciamentoLocalizacao(view)
-
-        val container = view.findViewById<LinearLayout>(R.id.itemContainer)
-        carregarItensMarketplace(container)
-
-        return view
-    }
-
-    private fun inicializaGerenciamentoLocalizacao(view: View) {
-        currentAddressTextView = view.findViewById(R.id.currentAddressTextView)
-
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(requireActivity())
+        database = FirebaseDatabase.getInstance().getReference("markets")
 
-        if (ActivityCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestLocationPermission()
-        } else {
+        textNearestMarket = view.findViewById(R.id.textNearestMarket)
+        btnDistanceMarket = view.findViewById(R.id.btnDistanceMarket)
+        btnOpenMaps = view.findViewById(R.id.btnOpenMaps)
+
+        btnDistanceMarket.setOnClickListener {
             getCurrentLocation()
         }
-    }
 
-    private fun requestLocationPermission() {
-        requestPermissions(
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ),
-            LOCATION_PERMISSION_REQUEST_CODE
-        )
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                getCurrentLocation()
-            } else {
-                Snackbar.make(
-                    requireView(),
-                    "Permission denied. Cannot access location.",
-                    Snackbar.LENGTH_LONG
-                ).show()
-            }
+        btnOpenMaps.setOnClickListener {
+            nearestMarket?.let {
+                val uri = Uri.parse("geo:${it.latitude},${it.longitude}?q=${Uri.encode(it.name)}")
+                val intent = Intent(Intent.ACTION_VIEW, uri)
+                intent.setPackage("com.google.android.apps.maps")
+                startActivity(intent)
+            } ?: Toast.makeText(requireContext(), "Nenhum mercado encontrado", Toast.LENGTH_SHORT).show()
         }
+
+        return view
     }
 
     private fun getCurrentLocation() {
         if (ActivityCompat.checkSelfPermission(
                 requireContext(),
                 Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_COARSE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
+            ActivityCompat.requestPermissions(
+                requireActivity(),
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                1
+            )
             return
         }
+
+        locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 30000)
+            .setMinUpdateIntervalMillis(30000)
+            .build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 locationResult.lastLocation?.let { location ->
-                    displayAddress(location)
+                    currentLocation = location
+                    getNearestMarket()
                 }
             }
-        }
-
-        locationRequest = LocationRequest.create().apply {
-            interval = 30000 // Intervalo em milissegundos para atualizacoes de localizacao
-            fastestInterval =
-                30000 // O menor intervalo de tempo para receber atualizacoes de localizacao
-            priority = LocationRequest.PRIORITY_HIGH_ACCURACY
         }
 
         fusedLocationClient.requestLocationUpdates(
-            locationRequest,
-            locationCallback,
-            Looper.getMainLooper()
+            locationRequest, locationCallback, Looper.getMainLooper()
         )
     }
 
-    private fun displayAddress(location: Location) {
-        val geocoder = Geocoder(requireContext(), Locale.getDefault())
-        val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+    private fun getNearestMarket() {
+        currentLocation?.let { location ->
+            database.addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    var nearest: Market? = null
+                    var shortestDistance = Double.MAX_VALUE
 
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val address = addresses?.firstOrNull()?.getAddressLine(0) ?: "Address not found"
-                withContext(Dispatchers.Main) {
-                    currentAddressTextView.text = address
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    currentAddressTextView.text = "Error: ${e.message}"
-                }
-            }
-        }
-    }
+                    for (marketSnapshot in snapshot.children) {
+                        val market = marketSnapshot.getValue(Market::class.java)
+                        if (market != null) {
+                            val distance = calculateDistance(
+                                location.latitude, location.longitude,
+                                market.latitude, market.longitude
+                            )
 
-    override fun onDestroyView() {
-        super.onDestroyView()
-        _binding = null
-    }
-
-    fun carregarItensMarketplace(container: LinearLayout) {
-        val databaseRef = FirebaseDatabase.getInstance().getReference("itens")
-
-        databaseRef.addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                container.removeAllViews()
-
-                for (userSnapshot in snapshot.children) {
-                    for (itemSnapshot in userSnapshot.children) {
-                        val item = itemSnapshot.getValue(Item::class.java) ?: continue
-
-                        val itemView = LayoutInflater.from(container.context)
-                            .inflate(R.layout.item_template, container, false)
-
-                        val imageView = itemView.findViewById<ImageView>(R.id.item_image)
-                        val enderecoView = itemView.findViewById<TextView>(R.id.item_endereco)
-
-                        enderecoView.text = "Endereço: ${item.endereco ?: "Não informado"}"
-
-                        if (!item.imageUrl.isNullOrEmpty()) {
-                            Glide.with(container.context).load(item.imageUrl).into(imageView)
-                        } else if (!item.base64Image.isNullOrEmpty()) {
-                            try {
-                                val bytes = Base64.decode(item.base64Image, Base64.DEFAULT)
-                                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                                imageView.setImageBitmap(bitmap)
-                            } catch (_: Exception) {}
+                            if (distance < shortestDistance) {
+                                shortestDistance = distance
+                                nearest = market
+                            }
                         }
+                    }
 
-                        container.addView(itemView)
+                    if (nearest != null) {
+                        nearestMarket = nearest
+                        textNearestMarket.text =
+                            "Mercado mais próximo:\n${nearest.name}\n${nearest.address}\n(${shortestDistance.roundToInt()} m)"
+                    } else {
+                        textNearestMarket.text = "Nenhum mercado encontrado no banco."
                     }
                 }
-            }
 
-            override fun onCancelled(error: DatabaseError) {
-                Toast.makeText(container.context, "Erro ao carregar dados", Toast.LENGTH_SHORT).show()
-            }
-        })
+                override fun onCancelled(error: DatabaseError) {
+                    Toast.makeText(requireContext(), "Erro ao acessar o banco", Toast.LENGTH_SHORT).show()
+                }
+            })
+        } ?: Toast.makeText(requireContext(), "Localização não encontrada", Toast.LENGTH_SHORT).show()
     }
+
+    private fun calculateDistance(
+        lat1: Double, lon1: Double,
+        lat2: Double, lon2: Double
+    ): Double {
+        val R = 6371000.0 // raio da Terra em metros
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) *
+                cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return R * c
+    }
+
+    data class Market(
+        val name: String = "",
+        val address: String = "",
+        val latitude: Double = 0.0,
+        val longitude: Double = 0.0
+    )
 }
